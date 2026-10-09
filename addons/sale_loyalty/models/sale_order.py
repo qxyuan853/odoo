@@ -1073,7 +1073,23 @@ class SaleOrder(models.Model):
         # Programs that are automatic and not yet applied
         program_domain = self._get_program_domain()
         domain = Domain.AND([program_domain, [('id', 'not in', points_programs.ids), ('trigger', '=', 'auto'), ('rule_ids.mode', '=', 'auto')]])
-        automatic_programs = self.env['loyalty.program'].search(domain).filtered(lambda p:
+        automatic_programs = self.env['loyalty.program'].search(domain)
+        limited_programs = automatic_programs.filtered('limit_usage')
+        if limited_programs:
+            # Serialize checks against the shared program quota. Odoo uses
+            # REPEATABLE READ, so a lock alone cannot refresh a waiter's old
+            # snapshot. Updating this dedicated revision forces a concurrent
+            # waiter to retry the whole HTTP transaction after the winner commits.
+            for program in limited_programs.sorted('id'):
+                self.env.cr.execute(
+                    "UPDATE loyalty_program "
+                    "SET usage_check_revision = usage_check_revision + 1 WHERE id = %s",
+                    (program.id,),
+                )
+            limited_programs.invalidate_recordset([
+                'usage_check_revision', 'order_count', 'total_order_count',
+            ])
+        automatic_programs = automatic_programs.filtered(lambda p:
             not p.limit_usage or p.total_order_count < p.max_usage)
 
         all_programs_to_check = points_programs | coupon_programs | automatic_programs

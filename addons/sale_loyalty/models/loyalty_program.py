@@ -7,6 +7,7 @@ class LoyaltyProgram(models.Model):
     _inherit = 'loyalty.program'
 
     order_count = fields.Integer(compute='_compute_order_count')
+    usage_check_revision = fields.Integer(default=0, copy=False, readonly=True)
     sale_ok = fields.Boolean(string="Sales", default=True)
 
     def _compute_order_count(self):
